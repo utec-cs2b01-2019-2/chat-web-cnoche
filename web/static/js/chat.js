@@ -1,5 +1,5 @@
 function sendMessage(){
-    alert("Heyyyy");
+    alert("hello");
 }
 
 function get_current(){
@@ -11,11 +11,11 @@ function get_current(){
 }
 
 function getMessages(user_from_id, user_to_id){
-    alert("Voy a traer los mensajes entre "+ user_from_id +" y "+ user_to_id);
+    alert("Usuarios entre "+ user_from_id +" y "+ user_to_id);
 }
 
 function get_all_users(user_from_id){
-    console.log("Voy a traer todos los usuarios");
+    console.log("all them users");
 
     $.getJSON("/users", function(data){
     var i =0;
