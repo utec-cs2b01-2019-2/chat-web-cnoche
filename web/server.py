@@ -1,22 +1,15 @@
-from flask import Flask,render_template,jsonify, request, session, Response, redirect,url_for, send_file
-from io import BytesIO
-from database import connector 
+from flask import Flask,render_template, request, session, Response, redirect
+from database import connector
 from model import entities
 from datetime import datetime
-import json
 import time
-import base64
-from flask_socketio import SocketIO,send,emit,join_room
-import eventlet 
+import json
+
 
 db = connector.Manager()
 engine = db.createEngine()
 
 app = Flask(__name__)
-
-socketio=SocketIO(app,manage_session=False)
-
-users_total={}
 
 @app.route('/')
 def index():
@@ -26,24 +19,20 @@ def index():
 def static_content(content):
     return render_template(content)
 
-@app.route('/registerUser', methods = ['POST'])
-def registerUser():
-    c = request.form
+@app.route('/users', methods = ['POST'])
+def create_user():
+    c =  json.loads(request.form['values'])
+    #c = json.loads(request.data)
     user = entities.User(
+        username=c['username'],
         name=c['name'],
         fullname=c['fullname'],
-        username=c['username'],
-        password=c['password'],
+        password=c['password']
     )
     session = db.getSession(engine)
-    users = session.query(entities.User).filter(entities.User.username == user.username)
-    msg=""
-    for u in users:
-        msg = "no"
-        return render_template('register.html',msg=msg)
     session.add(user)
     session.commit()
-    return render_template('index.html')
+    return 'Created User'
 
 @app.route('/users/<id>', methods = ['GET'])
 def get_user(id):
@@ -127,21 +116,6 @@ def get_messages():
     data = dbResponse[:]
     return Response(json.dumps(data, cls=connector.AlchemyEncoder), mimetype='application/json')
 
-@app.route('/setContactID', methods = ['POST'])
-def contact_id_set():
-    contact_id=request.json
-    print("seteo contact_id ",contact_id,type(contact_id))
-    session['contact_id']=contact_id
-    db_session=db.getSession(engine)
-    user_cont = db_session.query(entities.User).filter(entities.User.id == contact_id).first()
-    session['contact_username']=user_cont.username
-    datamsg=get_messages_user(contact_id,session['logged_user'])
-    datamsgJson=[]
-    for msg in datamsg:
-        datamsgJson.append({"user_from": msg.user_from_id, "user_to": msg.user_to_id,"content":msg.content})
-    datamsg=json.dumps(datamsgJson)
-    return jsonify(datamsg)
-
 @app.route('/messages/<user_from_id>/<user_to_id>', methods = ['GET'])
 def get_messages_user(user_from_id, user_to_id ):
     db_session = db.getSession(engine)
@@ -160,26 +134,34 @@ def get_messages_user(user_from_id, user_to_id ):
         data.append(message)
     return Response(json.dumps(data, cls=connector.AlchemyEncoder), mimetype='application/json')
 
+@app.route('/messages', methods = ['PUT'])
+def update_message():
+    session = db.getSession(engine)
+    id = request.form['key']
+    message = session.query(entities.Message).filter(entities.Message.id == id).first()
+    c = json.loads(request.form['values'])
+    for key in c.keys():
+        setattr(message, key, c[key])
+    session.add(message)
+    session.commit()
+    return 'Updated Message'
 
-@socketio.on('message')
-def message(data):
-    try:
-        print(data['msg'])
-        message=data['msg']
-        print('Enviado a ',session['contact_id'])
+@app.route('/messages', methods = ['DELETE'])
+def delete_message():
+    id = request.form['key']
+    session = db.getSession(engine)
+    message = session.query(entities.Message).filter(entities.Message.id == id).one()
+    session.delete(message)
+    session.commit()
+    return "Deleted Message"
 
-        db_session = db.getSession(engine)
-        msg = entities.Message(
-            content=message,
-            sent_on=datetime.today(),
-            user_from_id=session['logged_user'],
-            user_to_id=session['contact_id']
-        )
-        db_session = db.getSession(engine)
-        db_session.add(msg)
-        db_session.commit()
-        room=session['contact_id']
-
+@app.route('/create_test_messages', methods = ['GET'])
+def create_test_messages():
+    db_session = db.getSession(engine)
+    message = entities.Message(content="Hi")
+    db_session.add(message)
+    db_session.commit()
+    return "Test message created!"
 
 @app.route('/sendMessage', methods = ['POST'])
 def send_message():
@@ -215,11 +197,25 @@ def authenticate():
             ).filter(entities.User.password==password
             ).one()
         session['logged_user'] = user.id
-        message = {'message':'Authorized'}
+        message = {'message':'Authorized', 'user_id': user.id, 'username': user.username}
         return Response(json.dumps(message,cls=connector.AlchemyEncoder), status=200,mimetype='application/json')
     except Exception:
         message = {'message':'Unauthorized'}
         return Response(json.dumps(message,cls=connector.AlchemyEncoder), status=401,mimetype='application/json')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @app.route('/current', methods = ['GET'])
 def current_user():
@@ -285,5 +281,4 @@ def delete_group(id):
 
 if __name__ == '__main__':
     app.secret_key = ".."
-    #app.run(debug=True,port=80, threaded=True, use_reloader=False)
-    socketio.run(app,debug=True,port=8000)
+    app.run(debug=True,port=8000, threaded=True, use_reloader=False)
